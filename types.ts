@@ -1,38 +1,15 @@
-export enum AppState {
-  Input = 'Input',
-  Loading = 'Loading',
-  Results = 'Results',
-}
-
-export interface AnalysisSection {
-  title: string;
-  summary: string;
-  strengths: string[];
-}
-
-export interface SuggestionItem {
-  category: string;
-  suggestion: string;
-}
-
-export interface SuggestionsSection {
-  title: string;
-  items: SuggestionItem[];
-}
-
-export interface BuildStep {
-  step: number;
+export interface ConceptualAnalysis {
   title: string;
   description: string;
 }
 
-export interface BuildPlanSection {
-  title: string;
-  steps: BuildStep[];
+export interface ImprovementSuggestion {
+  category: string;
+  suggestions: string[];
 }
 
-export interface ImplementationTask {
-  id: number;
+export interface Task {
+  id: string;
   title: string;
   description: string;
   relatedSuggestionCategory: string;
@@ -40,19 +17,38 @@ export interface ImplementationTask {
 
 export interface UpdatePlanSection {
   title: string;
-  tasks: ImplementationTask[];
+  tasks: Task[];
+}
+
+export interface CommitDetails {
+  hash: string;
+  author: string;
+  date: string;
+  message: string;
 }
 
 export interface AnalysisResult {
-  analysis: AnalysisSection;
-  suggestions: SuggestionsSection;
-  buildPlan: BuildPlanSection;
-  updatePlan?: UpdatePlanSection;
+  conceptualAnalysis: ConceptualAnalysis;
+  improvementSuggestions: ImprovementSuggestion[];
+  updatePlan: UpdatePlanSection;
+  commitDetails?: CommitDetails;
 }
 
 export interface HistoryItem {
   id: number;
-  repoUrl: string;
   timestamp: number;
+  repoUrl: string;
   result: AnalysisResult;
+}
+
+export type AppState = 'initial' | 'fetching_repo' | 'analyzing_repo' | 'results' | 'error' | 'building';
+
+export interface RepoFile {
+    path: string;
+    content: string;
+}
+
+export interface RepoData {
+    tree: { path: string, type: string, sha: string, size?: number }[];
+    files: RepoFile[];
 }

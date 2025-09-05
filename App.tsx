@@ -1,135 +1,188 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { AnalysisResult, AppState, HistoryItem } from './types';
-import { analyzeRepo, generateImplementationPlan } from './services/geminiService';
-import * as historyService from './services/historyService';
+import React, { useState, useEffect } from 'react';
 import RepoInput from './components/RepoInput';
 import LoadingState from './components/LoadingState';
 import ResultsDisplay from './components/ResultsDisplay';
 import HistoryPanel from './components/HistoryPanel';
+import BuildProgress from './components/BuildProgress';
+import { analyzeRepository, generateCommitMessage } from './services/geminiService';
+import { getRepositoryContents } from './services/githubService';
+import { addToHistory, getHistory, clearHistory as clearHistoryService } from './services/historyService';
+import { saveApiKey, getApiKey } from './services/apiKeyService';
+import { AnalysisResult, AppState, HistoryItem, CommitDetails } from './types';
 import { GithubIcon } from './components/Icons';
 
 const App: React.FC = () => {
-  const [appState, setAppState] = useState<AppState>(AppState.Input);
-  const [repoUrl, setRepoUrl] = useState<string>('https://github.com/allyelvis/aenzbi-ide.git');
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
-  const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [isGeneratingUpdate, setIsGeneratingUpdate] = useState<boolean>(false);
+  const [appState, setAppState] = useState<AppState>('initial');
+  const [repoUrl, setRepoUrl] = useState<string>('');
+  const [currentResult, setCurrentResult] = useState<AnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [githubApiKey, setGithubApiKey] = useState<string | null>(null);
 
   useEffect(() => {
-    setHistory(historyService.getHistory());
+    setHistory(getHistory());
+    const key = getApiKey();
+    if (key) {
+      setGithubApiKey(key);
+    }
   }, []);
 
-  const handleAnalyze = useCallback(async () => {
-    if (!repoUrl) {
+  const handleAnalyze = async () => {
+    if (!repoUrl.trim()) {
       setError('Please enter a valid GitHub repository URL.');
       return;
     }
-    setError(null);
-    setAppState(AppState.Loading);
-    setAnalysisResult(null);
-
-    try {
-      const result = await analyzeRepo(repoUrl);
-      setAnalysisResult(result);
-      setAppState(AppState.Results);
-      const newHistory = historyService.addToHistory(repoUrl, result);
-      setHistory(newHistory);
-    } catch (err) {
-      console.error(err);
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-      setError(`Failed to analyze repository. ${errorMessage}`);
-      setAppState(AppState.Input);
+    if (!githubApiKey) {
+      setError('A GitHub API Key is required. Please add one.');
+      return;
     }
-  }, [repoUrl]);
-  
-  const handleGenerateUpdatePlan = useCallback(async () => {
-    if (!analysisResult || !repoUrl) return;
 
-    setIsGeneratingUpdate(true);
+    setAppState('fetching_repo');
     setError(null);
+    setCurrentResult(null);
 
     try {
-      const plan = await generateImplementationPlan(repoUrl, analysisResult.suggestions.items);
-      const updatedResult = { ...analysisResult, updatePlan: plan };
-      setAnalysisResult(updatedResult);
+      const repoData = await getRepositoryContents(repoUrl, githubApiKey);
+
+      setAppState('analyzing_repo');
+      const result = await analyzeRepository(repoUrl, repoData);
       
-      const newHistory = historyService.addToHistory(repoUrl, updatedResult);
+      setCurrentResult(result);
+      const newHistory = addToHistory(repoUrl, result);
       setHistory(newHistory);
-    } catch (err) {
-      console.error(err);
-      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
-      setError(`Failed to generate implementation plan. ${errorMessage}`);
-    } finally {
-      setIsGeneratingUpdate(false);
+      setAppState('results');
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
+      setError(`Analysis failed: ${errorMessage}`);
+      setAppState('error');
     }
-  }, [analysisResult, repoUrl]);
-
-  const handleReset = () => {
-    setAppState(AppState.Input);
-    setAnalysisResult(null);
-    setError(null);
+  };
+  
+  const handleSaveApiKey = (key: string) => {
+    saveApiKey(key);
+    setGithubApiKey(key);
+    setError(null); // Clear error messages when a new key is saved
   };
 
-  const handleSelectHistory = (result: AnalysisResult, url: string) => {
+  const handleBuildAndCommit = async () => {
+    if (!currentResult) return;
+    
+    setAppState('building');
+
+    setTimeout(async () => {
+      try {
+        const commitMessage = await generateCommitMessage(currentResult.updatePlan);
+
+        const commitDetails: CommitDetails = {
+          hash: crypto.randomUUID().substring(0, 7),
+          author: 'AI Developer',
+          date: new Date().toISOString(),
+          message: commitMessage,
+        };
+
+        const updatedResult = { ...currentResult, commitDetails };
+        setCurrentResult(updatedResult);
+        const newHistory = addToHistory(repoUrl, updatedResult);
+        setHistory(newHistory);
+
+        setAppState('results');
+
+      } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : 'An unknown error occurred.';
+        setError(`Failed to generate commit message: ${errorMessage}`);
+        setAppState('error');
+      }
+    }, 4000);
+  };
+
+  const handleSelectHistoryItem = (result: AnalysisResult, url: string) => {
+    setCurrentResult(result);
     setRepoUrl(url);
-    setAnalysisResult(result);
-    setAppState(AppState.Results);
+    setAppState('results');
     setError(null);
   };
   
   const handleClearHistory = () => {
-    historyService.clearHistory();
-    setHistory([]);
-  };
+      clearHistoryService();
+      setHistory([]);
+      if(appState !== 'results'){
+        handleNewAnalysis();
+      }
+  }
+
+  const handleNewAnalysis = () => {
+    setAppState('initial');
+    setCurrentResult(null);
+    setRepoUrl('');
+    setError(null);
+  }
 
   const renderContent = () => {
     switch (appState) {
-      case AppState.Input:
-        return <RepoInput repoUrl={repoUrl} setRepoUrl={setRepoUrl} onAnalyze={handleAnalyze} error={error} />;
-      case AppState.Loading:
-        return <LoadingState />;
-      case AppState.Results:
-        return analysisResult && (
-          <ResultsDisplay 
-            result={analysisResult} 
-            onReset={handleReset} 
-            repoUrl={repoUrl}
-            isGeneratingUpdate={isGeneratingUpdate}
-            onGenerateUpdate={handleGenerateUpdatePlan}
-          />
-        );
+      case 'fetching_repo':
+      case 'analyzing_repo':
+        return <LoadingState stage={appState} />;
+      case 'building':
+        return <BuildProgress />;
+      case 'results':
+        return currentResult ? (
+            <ResultsDisplay
+              result={currentResult}
+              repoUrl={repoUrl}
+              onBuildAndCommit={handleBuildAndCommit}
+            />
+        ) : <p>Something went wrong loading the results.</p>;
+      case 'error':
+      case 'initial':
       default:
-        return null;
+        return <RepoInput 
+            repoUrl={repoUrl} 
+            setRepoUrl={setRepoUrl} 
+            onAnalyze={handleAnalyze} 
+            error={error} 
+            onSaveApiKey={handleSaveApiKey}
+            hasApiKey={!!githubApiKey}
+        />;
     }
   };
-
+  
   return (
-    <div className="bg-slate-900 min-h-screen font-sans text-gray-200 flex flex-col">
-       <header className="w-full bg-slate-900/80 backdrop-blur-sm border-b border-slate-800 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto flex justify-between items-center p-4">
+    <div className="bg-slate-900 min-h-screen text-gray-200 font-sans">
+      <div className="container mx-auto p-4 sm:p-6 lg:p-8">
+        <header className="flex justify-between items-center mb-6">
           <div className="flex items-center gap-3">
-            <GithubIcon className="w-8 h-8 text-cyan-400" />
-            <h1 className="text-xl sm:text-2xl font-bold text-gray-100">GitHub Repo AI Analyzer</h1>
+             <GithubIcon className="w-8 h-8 text-cyan-400" />
+             <h1 className="text-2xl font-bold text-gray-100">Repo-Analyzer</h1>
           </div>
-        </div>
-      </header>
+          {appState === 'results' && (
+             <button
+              onClick={handleNewAnalysis}
+              className="px-4 py-2 bg-slate-700 text-white font-semibold rounded-lg hover:bg-slate-600 transition-all duration-200"
+            >
+              New Analysis
+            </button>
+          )}
+        </header>
 
-      <div className="w-full max-w-7xl mx-auto flex-grow flex flex-col lg:flex-row gap-8 p-4 sm:p-6 lg:p-8">
-        <main className="flex-grow flex flex-col">
-          {renderContent()}
+        <main className="flex flex-col lg:flex-row gap-8">
+            <div className="flex-grow">
+              <div className="bg-slate-850 border border-slate-700 rounded-lg shadow-lg p-8 min-h-[60vh] flex flex-col justify-center">
+                {renderContent()}
+              </div>
+            </div>
+          
+            <HistoryPanel 
+                history={history} 
+                onSelectItem={handleSelectHistoryItem} 
+                onClearHistory={handleClearHistory}
+                isHidden={appState === 'building'}
+            />
         </main>
-        <HistoryPanel 
-          history={history}
-          onSelectItem={handleSelectHistory}
-          onClearHistory={handleClearHistory}
-          isHidden={appState === AppState.Loading}
-        />
-      </div>
 
-      <footer className="w-full max-w-7xl mx-auto text-center py-4 px-8 text-sm text-gray-500">
-        <p>Powered by Google Gemini. This is a conceptual analysis and does not access repository code directly.</p>
-      </footer>
+         <footer className="text-center mt-8 text-gray-500 text-sm">
+            <p>Powered by Google Gemini. Analysis is based on a limited set of key files from the repository.</p>
+        </footer>
+      </div>
     </div>
   );
 };

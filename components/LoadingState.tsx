@@ -1,26 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 
-const loadingMessages = [
-  'Initializing AI core...',
-  'Forking repository conceptually...',
-  'Analyzing code structure and architecture...',
-  'Identifying potential strengths...',
-  'Brewing improvement suggestions...',
-  'Formulating implementation roadmap...',
-  'Finalizing analysis...',
-];
+interface LoadingStateProps {
+    stage: 'fetching_repo' | 'analyzing_repo';
+}
 
-const LoadingState: React.FC = () => {
-  const [messageIndex, setMessageIndex] = useState(0);
+const messages = {
+    fetching_repo: 'Fetching repository data from GitHub...',
+    analyzing_repo: 'Analyzing repository with Gemini AI...',
+};
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setMessageIndex((prevIndex) => (prevIndex + 1) % loadingMessages.length);
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, []);
-
+const LoadingState: React.FC<LoadingStateProps> = ({ stage }) => {
   return (
     <div className="flex flex-col items-center justify-center h-full text-center p-4">
       <div className="flex items-center gap-4 mb-6">
@@ -28,7 +17,7 @@ const LoadingState: React.FC = () => {
         <h2 className="text-3xl font-bold text-gray-100">Analyzing...</h2>
       </div>
       <p className="text-lg text-gray-400 transition-opacity duration-500">
-        {loadingMessages[messageIndex]}
+        {messages[stage]}
       </p>
     </div>
   );
