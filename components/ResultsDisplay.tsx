@@ -3,12 +3,13 @@ import { AnalysisResult } from '../types';
 import UpdatePlanDisplay from './UpdatePlanDisplay';
 import ResultCard from './ResultCard';
 import CommitInfo from './CommitInfo';
+import AppliedChanges from './AppliedChanges';
 import { BrainCircuitIcon, LightbulbIcon, TerminalIcon } from './Icons';
 
 interface ResultsDisplayProps {
   result: AnalysisResult;
   repoUrl: string;
-  onBuildAndCommit: () => void;
+  onImplement: () => void;
 }
 
 const getRepoName = (url: string): string => {
@@ -20,11 +21,11 @@ const getRepoName = (url: string): string => {
   }
 };
 
-const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, repoUrl, onBuildAndCommit }) => {
-  const { conceptualAnalysis, improvementSuggestions, updatePlan, commitDetails } = result;
+const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, repoUrl, onImplement }) => {
+  const { conceptualAnalysis, improvementSuggestions, updatePlan, commitDetails, proposedChanges } = result;
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 animate-fade-in">
       <header className="pb-4 border-b border-slate-700">
         <h2 className="text-3xl font-bold text-gray-100">Analysis for <span className="text-cyan-400 break-all">{getRepoName(repoUrl)}</span></h2>
       </header>
@@ -46,21 +47,23 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, repoUrl, onBuil
             </div>
           ))}
         </div>
-      {/* Fix: Corrected typo in the ResultCard closing tag. */}
       </ResultCard>
 
       <UpdatePlanDisplay plan={updatePlan} />
 
       {commitDetails ? (
-        <CommitInfo details={commitDetails} />
+        <>
+            {proposedChanges && <AppliedChanges changes={proposedChanges} />}
+            <CommitInfo details={commitDetails} />
+        </>
       ) : (
         <div className="pt-4 text-center">
             <button
-                onClick={onBuildAndCommit}
+                onClick={onImplement}
                 className="w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-500 transition-all duration-200 transform hover:scale-105 shadow-lg shadow-indigo-900/50"
             >
                 <TerminalIcon className="w-6 h-6" />
-                Simulate Build & Generate Commit
+                Implement Suggestions
             </button>
         </div>
       )}

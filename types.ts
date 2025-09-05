@@ -27,11 +27,23 @@ export interface CommitDetails {
   message: string;
 }
 
+export interface CodeChange {
+  filePath: string;
+  status: 'created' | 'modified' | 'deleted';
+  content: string; 
+}
+
+export interface ProposedChanges {
+  summary: string;
+  changes: CodeChange[];
+}
+
 export interface AnalysisResult {
   conceptualAnalysis: ConceptualAnalysis;
   improvementSuggestions: ImprovementSuggestion[];
   updatePlan: UpdatePlanSection;
   commitDetails?: CommitDetails;
+  proposedChanges?: ProposedChanges;
 }
 
 export interface HistoryItem {
@@ -41,7 +53,7 @@ export interface HistoryItem {
   result: AnalysisResult;
 }
 
-export type AppState = 'initial' | 'fetching_repo' | 'analyzing_repo' | 'results' | 'error' | 'building';
+export type AppState = 'initial' | 'fetching_repo' | 'analyzing_repo' | 'results' | 'error' | 'building' | 'generating_changes' | 'reviewing_changes';
 
 export interface RepoFile {
     path: string;

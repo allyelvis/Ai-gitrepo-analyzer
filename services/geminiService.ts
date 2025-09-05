@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { AnalysisResult, UpdatePlanSection, RepoData } from '../types';
+import { AnalysisResult, UpdatePlanSection, RepoData, RepoFile, ProposedChanges } from '../types';
 
 // Initialize the GoogleGenAI client with the API key from environment variables.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -133,17 +133,107 @@ ${file.content.substring(0, MAX_CONTENT_CHARS_PER_FILE)}
     }
 };
 
-export const generateCommitMessage = async (updatePlan: UpdatePlanSection): Promise<string> => {
-    const formattedTasks = updatePlan.tasks.map(task => `- ${task.title}: ${task.description} (Category: ${task.relatedSuggestionCategory})`).join('\n');
+const codeChangesSchema = {
+    type: Type.OBJECT,
+    properties: {
+        summary: { type: Type.STRING, description: "A brief, one-sentence summary of the changes being made." },
+        changes: {
+            type: Type.ARRAY,
+            description: "A list of file modifications, creations, or deletions.",
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    filePath: { type: Type.STRING, description: "The full path of the file to be changed." },
+                    status: { type: Type.STRING, description: "The status of the file: 'created', 'modified', or 'deleted'." },
+                    content: { type: Type.STRING, description: "The full new content of the file. For 'deleted' status, this should be an empty string." }
+                },
+                required: ['filePath', 'status', 'content']
+            }
+        }
+    },
+    required: ['summary', 'changes']
+};
+
+
+export const generateCodeChanges = async (updatePlan: UpdatePlanSection, files: RepoFile[]): Promise<ProposedChanges> => {
+    const fileContentsString = files.map(file => `
+---
+File: ${file.path}
+---
+\`\`\`
+${file.content}
+\`\`\`
+`).join('\n');
 
     const prompt = `
-        Based on the following list of tasks from an implementation plan, create a single, well-formatted conventional commit message.
+      You are an expert software engineer tasked with implementing a series of improvements to a codebase.
+      I will provide you with the full content of the relevant files and an update plan.
+      Your task is to generate the necessary code changes to fulfill the plan.
+
+      **Existing File Contents:**
+      ${fileContentsString}
+
+      **Update Plan:**
+      - Title: ${updatePlan.title}
+      - Tasks:
+      ${updatePlan.tasks.map(t => `  - ${t.title}: ${t.description}`).join('\n')}
+
+      Please implement the tasks described in the update plan.
+      - For modifications, apply the changes to the existing code.
+      - If a new file is required, create it.
+      - Only modify or create files that are absolutely necessary to complete the tasks.
+      - Ensure the returned code is complete and correct.
+      - Return your response as a single JSON object adhering to the provided schema. Do not include any other text or markdown.
+    `;
+
+     try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: codeChangesSchema
+            },
+        });
+
+        const jsonText = response.text.trim();
+        return JSON.parse(jsonText) as ProposedChanges;
+
+    } catch (error) {
+        console.error("Error generating code changes:", error);
+        if (error instanceof Error) {
+            throw new Error(`Failed to generate code changes via Gemini API: ${error.message}`);
+        }
+        throw new Error("An unknown error occurred during AI code generation.");
+    }
+};
+
+
+export const generateCommitMessage = async (updatePlan: UpdatePlanSection, changes?: ProposedChanges): Promise<string> => {
+    
+    let tasksSection: string;
+
+    if (changes) {
+         tasksSection = `
+            The following changes were made:
+            - Summary: ${changes.summary}
+            - Files affected: ${changes.changes.map(c => `${c.filePath} (${c.status})`).join(', ')}
+        `;
+    } else {
+        tasksSection = `
+            Here are the tasks that were planned:
+            ${updatePlan.tasks.map(task => `- ${task.title}: ${task.description} (Category: ${task.relatedSuggestionCategory})`).join('\n')}
+        `;
+    }
+
+
+    const prompt = `
+        Based on the following implementation summary, create a single, well-formatted conventional commit message.
         The commit message should start with a type (e.g., 'feat', 'fix', 'refactor', 'chore') and a concise summary.
-        The body of the commit message should elaborate on the key changes and improvements made, summarizing the tasks.
+        The body of the commit message should elaborate on the key changes and improvements made.
         Do not include any explanation, markdown formatting, or anything else; provide only the raw commit message text.
 
-        Here are the tasks:
-        ${formattedTasks}
+        ${tasksSection}
     `;
 
     try {
