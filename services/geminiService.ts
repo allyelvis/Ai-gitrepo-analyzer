@@ -59,14 +59,26 @@ const analysisSchema = {
 };
 
 export const analyzeRepository = async (repoUrl: string, repoData: RepoData): Promise<AnalysisResult> => {
-    const fileTreeString = repoData.tree.map(file => `  - ${file.path} (${file.size} bytes)`).join('\n');
+    // Define limits to prevent exceeding the API's token limit.
+    const MAX_TREE_ITEMS_IN_PROMPT = 500;
+    const MAX_CONTENT_CHARS_PER_FILE = 4000;
 
+    // Truncate the file tree if it's too large.
+    const isTreeTruncated = repoData.tree.length > MAX_TREE_ITEMS_IN_PROMPT;
+    const treeForPrompt = isTreeTruncated ? repoData.tree.slice(0, MAX_TREE_ITEMS_IN_PROMPT) : repoData.tree;
+    
+    const fileTreeString = treeForPrompt.map(file => `  - ${file.path} (${file.size} bytes)`).join('\n');
+    const truncationMessage = isTreeTruncated 
+        ? `\n... and ${repoData.tree.length - MAX_TREE_ITEMS_IN_PROMPT} more files (tree truncated for brevity).` 
+        : '';
+
+    // Truncate the content of each file.
     const fileContentsString = repoData.files.map(file => `
 ---
 File: ${file.path}
 ---
 \`\`\`
-${file.content.substring(0, 5000)}
+${file.content.substring(0, MAX_CONTENT_CHARS_PER_FILE)}
 \`\`\`
 `).join('\n');
 
@@ -79,7 +91,7 @@ ${file.content.substring(0, 5000)}
       
       **Repository File Structure:**
       \`\`\`
-      ${fileTreeString}
+      ${fileTreeString}${truncationMessage}
       \`\`\`
 
       **Content of Key Files:**
@@ -111,6 +123,10 @@ ${file.content.substring(0, 5000)}
     } catch (error) {
         console.error("Error analyzing repository:", error);
         if (error instanceof Error) {
+            // Check for token limit-related errors to provide a clearer message to the user.
+            if (error.message.includes('token') || error.message.includes('exceeds the maximum')) {
+                 throw new Error(`The repository is too large for the AI to analyze. The file structure and content exceeded the API's context size limit.`);
+            }
             throw new Error(`Failed to get analysis from Gemini API: ${error.message}`);
         }
         throw new Error("An unknown error occurred during AI analysis.");
