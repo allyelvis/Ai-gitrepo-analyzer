@@ -1,5 +1,5 @@
 import React from 'react';
-import { AnalysisResult } from '../types';
+import { AnalysisResult, RepoFile } from '../types';
 import UpdatePlanDisplay from './UpdatePlanDisplay';
 import ResultCard from './ResultCard';
 import CommitInfo from './CommitInfo';
@@ -10,6 +10,7 @@ interface ResultsDisplayProps {
   result: AnalysisResult;
   repoUrl: string;
   onImplement: () => void;
+  originalFiles?: RepoFile[];
 }
 
 const getRepoName = (url: string): string => {
@@ -21,7 +22,7 @@ const getRepoName = (url: string): string => {
   }
 };
 
-const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, repoUrl, onImplement }) => {
+const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, repoUrl, onImplement, originalFiles }) => {
   const { conceptualAnalysis, improvementSuggestions, updatePlan, commitDetails, proposedChanges } = result;
 
   return (
@@ -53,7 +54,7 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ result, repoUrl, onImpl
 
       {commitDetails ? (
         <>
-            {proposedChanges && <AppliedChanges changes={proposedChanges} />}
+            {proposedChanges && <AppliedChanges changes={proposedChanges} originalFiles={originalFiles}/>}
             <CommitInfo details={commitDetails} />
         </>
       ) : (

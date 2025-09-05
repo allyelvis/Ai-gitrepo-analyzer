@@ -179,6 +179,7 @@ const App: React.FC = () => {
               result={currentResult}
               repoUrl={repoUrl}
               onImplement={handleImplement}
+              originalFiles={currentRepoData?.files}
             />
         ) : <p>Something went wrong loading the results.</p>;
       case 'error':
